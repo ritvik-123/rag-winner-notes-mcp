@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 
+from cleaner import clean_text
 from loader import Document
 
 SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
@@ -59,7 +60,8 @@ def chunk_documents(
 ) -> list[Chunk]:
     chunks: list[Chunk] = []
     for document in documents:
-        paragraphs = [p.strip() for p in document.content.split("\n\n") if p.strip()]
+        content = clean_text(document.content)
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
         units: list[str] = []
         for paragraph in paragraphs:
             if len(paragraph) <= chunk_size:
