@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
 
 from auth import ApiKeyMiddleware
+from embedder import embed_texts
 from rag_chain import RAGAnswer, build_conversational_chain
 from retriever import NotesRetriever
 from vector_store import VectorStore
@@ -19,6 +20,15 @@ store = VectorStore()
 store.load("index")
 retriever = NotesRetriever(store=store, top_k=3)
 conversational_chain = build_conversational_chain(retriever)
+
+# embedder.get_model() is a *lazy* singleton -- it only actually loads the
+# model the first time something calls embed_texts(). Without this line,
+# that first load (which includes several HTTP round-trips to Hugging Face
+# Hub to check cached file metadata) would happen inline during whichever
+# client's request happens to be first, risking a client-side timeout. Doing
+# it here, once, at startup, means every real request -- including the
+# first one -- hits an already-warm model.
+embed_texts(["warmup"])
 
 server = MCPServer(name="rag-notes-assistant")
 
