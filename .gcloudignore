@@ -1,0 +1,14 @@
+# This file controls what gets uploaded to Cloud Build for "gcloud run
+# deploy --source .", separately from .gitignore, which controls what goes
+# into git history. notes/ and index/ are excluded from git (personal data,
+# generated artifacts) but must NOT be excluded here, since the deployed
+# container needs them to actually answer questions.
+.rag_venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+env.yaml
+test_mcp_client.py

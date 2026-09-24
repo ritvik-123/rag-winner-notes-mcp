@@ -3,6 +3,7 @@ import os
 import uvicorn
 from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
 from auth import ApiKeyMiddleware
 from embedder import embed_texts
@@ -47,7 +48,14 @@ if __name__ == "__main__":
     # Fail fast: refuse to start rather than silently serve unauthenticated.
     api_key = os.environ["MCP_API_KEY"]
 
-    app = server.streamable_http_app()
+    # The SDK's own DNS-rebinding protection defaults to only allowing a
+    # Host header of "127.0.0.1", which is why this worked locally but not
+    # once deployed under a real hostname. ApiKeyMiddleware is already the
+    # real access-control layer here, so this specific protection (aimed at
+    # naive unauthenticated local servers) is redundant for this app --
+    # disabling it rather than hardcoding the deployed hostname into source.
+    transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    app = server.streamable_http_app(transport_security=transport_security)
     app = ApiKeyMiddleware(app, api_key=api_key)
 
     # 0.0.0.0, not 127.0.0.1: inside a container, 127.0.0.1 only accepts
