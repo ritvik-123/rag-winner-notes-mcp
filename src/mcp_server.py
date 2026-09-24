@@ -49,4 +49,14 @@ if __name__ == "__main__":
 
     app = server.streamable_http_app()
     app = ApiKeyMiddleware(app, api_key=api_key)
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+
+    # 0.0.0.0, not 127.0.0.1: inside a container, 127.0.0.1 only accepts
+    # connections from *within that same container* -- traffic coming in
+    # through Docker's port mapping (or Cloud Run's own routing) looks like
+    # it's from a different host, so binding to loopback would make the
+    # server unreachable from outside despite "running" fine internally.
+    # PORT: Cloud Run injects this env var and expects the app to listen on
+    # whatever value it sets, defaulting to 8080 -- not our old hardcoded
+    # 8000 -- so we read it at runtime instead of hardcoding either.
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)

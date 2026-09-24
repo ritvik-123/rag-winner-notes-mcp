@@ -1,0 +1,8 @@
+.rag_venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+test_mcp_client.py
