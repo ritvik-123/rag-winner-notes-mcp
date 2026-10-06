@@ -1,5 +1,7 @@
+import os
 from contextlib import asynccontextmanager
 
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, UploadFile
 from pydantic import BaseModel
@@ -85,3 +87,10 @@ async def mint_api_key(user_id: str = Depends(get_current_user_id)) -> dict:
     safe, there's no "show it again" afterwards.
     """
     return {"api_key": create_api_key(user_id)}
+
+
+if __name__ == "__main__":
+    # Same local-run pattern as mcp_server.py: 0.0.0.0 so it's reachable
+    # from outside a container, PORT read at runtime for Cloud Run.
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
