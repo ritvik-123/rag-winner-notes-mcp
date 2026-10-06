@@ -12,6 +12,7 @@ cryptography==50.0.1
 distro==1.9.0
 fastapi
 filelock==3.32.6
+firebase-admin
 fsspec==2026.7.0
 google-cloud-firestore
 google-cloud-storage

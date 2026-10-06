@@ -1,14 +1,16 @@
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile
+from fastapi import Depends, FastAPI, UploadFile
 from pydantic import BaseModel
 
 from chunker import chunk_documents
 from embedder import embed_chunks, embed_texts
+from firebase_auth import get_current_user_id
 from loader import Document
 from rag_chain import RAGAnswer, build_conversational_chain
 from retriever import NotesRetriever
+from user_store import create_api_key
 from vector_store import VectorStore
 
 load_dotenv()
@@ -26,9 +28,6 @@ app = FastAPI(title="RAG Notes API", lifespan=lifespan)
 
 
 class AskRequest(BaseModel):
-    # TODO(phase B): this should come from a verified Firebase ID token's
-    # uid instead of being supplied directly by the caller.
-    user_id: str
     question: str
     session_id: str = "default"
 
@@ -38,7 +37,7 @@ class NotesListResponse(BaseModel):
 
 
 @app.post("/notes/upload")
-async def upload_note(user_id: str, file: UploadFile) -> dict:
+async def upload_note(file: UploadFile, user_id: str = Depends(get_current_user_id)) -> dict:
     raw_text = (await file.read()).decode("utf-8")
     document = Document(content=raw_text, source=file.filename)
     chunks = chunk_documents([document])
@@ -58,22 +57,31 @@ async def upload_note(user_id: str, file: UploadFile) -> dict:
 
 
 @app.post("/ask", response_model=RAGAnswer)
-async def ask(request: AskRequest) -> RAGAnswer:
+async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) -> RAGAnswer:
     store = VectorStore()
-    if not store.load_from_gcs(request.user_id):
+    if not store.load_from_gcs(user_id):
         return RAGAnswer(answer="You haven't uploaded any notes yet.", sources=[])
 
     retriever = NotesRetriever(store=store, top_k=3)
     chain = build_conversational_chain(retriever)
     result = chain.invoke(
         {"question": request.question},
-        config={"configurable": {"session_id": f"{request.user_id}:{request.session_id}"}},
+        config={"configurable": {"session_id": f"{user_id}:{request.session_id}"}},
     )
     return RAGAnswer(answer=result["answer"], sources=result["sources"])
 
 
 @app.get("/notes", response_model=NotesListResponse)
-async def list_notes(user_id: str) -> NotesListResponse:
+async def list_notes(user_id: str = Depends(get_current_user_id)) -> NotesListResponse:
     store = VectorStore()
     store.load_from_gcs(user_id)
     return NotesListResponse(sources=sorted({chunk.source for chunk in store.chunks}))
+
+
+@app.post("/api-keys")
+async def mint_api_key(user_id: str = Depends(get_current_user_id)) -> dict:
+    """Issue a personal MCP API key for the logged-in user. Shown once in
+    the response -- same handling as any other API key, store it somewhere
+    safe, there's no "show it again" afterwards.
+    """
+    return {"api_key": create_api_key(user_id)}
