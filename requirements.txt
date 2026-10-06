@@ -12,6 +12,7 @@ cryptography==50.0.1
 distro==1.9.0
 filelock==3.32.6
 fsspec==2026.7.0
+google-cloud-storage
 groq==0.37.1
 h11==0.16.0
 hf-xet==1.6.0
