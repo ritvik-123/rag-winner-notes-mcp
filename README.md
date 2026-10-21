@@ -68,10 +68,10 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 ```
 GROQ_API_KEY=your_groq_api_key
-MCP_API_KEY=any_random_string_you_choose
 GCS_BUCKET_NAME=your_gcs_bucket_name
 FIREBASE_WEB_API_KEY=your_firebase_web_api_key
 ```
+(`MCP_API_KEY`, used in the original single-tenant version, is dead as of phase D — nothing in `src/` reads it anymore. MCP access is now controlled by minting a per-user key from `POST /api-keys`, not a static env var. `test_mcp_client.py` still references the old variable and needs updating to match `test_web_api_client.py`'s mint-then-call pattern — see Next Steps.)
 
 Google credentials (GCS, Firestore, Firebase Admin) resolve via Application Default Credentials — run `gcloud auth application-default login` once locally; on Cloud Run this comes from the attached service account instead.
 
@@ -105,6 +105,8 @@ Two deploy-time gotchas worth remembering: `.gcloudignore` controls what gets up
 
 ## Next Steps (as of this update)
 
+- **Phases A-D are implemented and wired correctly, but unverified — never actually run end to end.** Code review confirms the integration is consistent (GCS/Firestore calls match up across `vector_store.py`, `user_store.py`, `auth.py`, `web_api.py`, `mcp_server.py`), but as of this writing: the local venv is missing `fastapi`, `firebase_admin`, `google-cloud-firestore`, and `google-cloud-storage` (i.e. `pip install -r requirements.txt` hasn't been re-run since these were added), and the local `.env`/`env.yaml` are still missing `GCS_BUCKET_NAME` and `FIREBASE_WEB_API_KEY`. Neither `web_api.py` nor the GCS-backed path in `mcp_server.py` can actually start until both are fixed. Whether the GCS bucket, Firestore database, and a real Firebase project/web app exist yet on the GCP side is still unconfirmed.
+- **`test_mcp_client.py` is stale.** It predates phase D: still reads the now-dead `MCP_API_KEY` env var and is hardcoded to the live Cloud Run URL rather than localhost, so it never exercises the new per-user Firestore-resolved flow. Needs the same mint-a-key-then-call treatment `test_web_api_client.py` already got.
 - **Phase E — real login.** `test_web_api_client.py` signs in via Firebase's raw REST API as a stand-in; there's still no actual login form/frontend. Needed before this is usable by anyone but the person running test scripts.
 - **Redeploy.** `Dockerfile`/Cloud Run config predate phases A-D — still single-tenant, still only runs `mcp_server.py`, still bakes in a local index. Needs a second entrypoint (or a way to run both `web_api.py` and `mcp_server.py`), `GCS_BUCKET_NAME`/`FIREBASE_WEB_API_KEY` added to `env.yaml`, and the baked-in `notes/`/`index/` dropped from the image now that storage is per-user and GCS-backed.
 - **README/deploy docs vs. reality.** Keep this file in sync as the multi-tenant rework continues — it drifted noticeably between the original single-user deploy and phases A-D.
