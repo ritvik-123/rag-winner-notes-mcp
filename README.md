@@ -1,34 +1,60 @@
 # rag-winner-notes-mcp
 
-A personal knowledge base assistant built from scratch: retrieval augmented generation over personal notes, exposed as a remote MCP tool so any MCP compatible client (Claude Code, Claude Desktop, etc.) can query the notes directly, with a real public deployment on Google Cloud Run.
+A personal knowledge base assistant built from scratch: retrieval augmented generation over personal notes, exposed both as a remote MCP tool (for MCP clients like Claude Code/Desktop) and as a REST API, with per-user accounts and a real deployment on Google Cloud Run.
 
 ## Live Deployment
 
 `https://rag-notes-mcp-585012498530.us-central1.run.app/mcp`
 
-The service is public but gated by an API key check (`x-api-key` header). This repo is meant to demonstrate a complete, working architecture rather than serve as an open public endpoint, so a valid key is required to actually query it.
+The service is public but gated by an API key check (`x-api-key` header). **Note:** this URL was deployed before the multi-tenant rework below (phases A-D) — redeploying with the current `Dockerfile` is still pending, see [Next Steps](#next-steps-as-of-this-update).
 
 ## Overview
 
-This project was built to learn the full RAG stack end to end: chunking and embedding strategy, vector retrieval, LangChain's retrieval and generation abstractions, the Model Context Protocol, and real cloud deployment, rather than just wiring together a demo. Every layer below was built and understood individually before moving on to the next.
+This project was built to learn the full RAG stack end to end: chunking and embedding strategy, vector retrieval, LangChain's retrieval and generation abstractions, the Model Context Protocol, real cloud deployment, and — in a second pass — turning a single-user script into a multi-tenant service (auth, per-user storage, API key issuance). Every layer was built and understood individually before moving on to the next.
 
 ## Architecture
 
+### Core RAG pipeline
+
 1. **Loading and chunking** (`src/loader.py`, `src/cleaner.py`, `src/chunker.py`)
-   Reads `.md`/`.txt` files from `notes/`, strips HTML and whitespace noise, and splits each document into roughly 300 character chunks with 50 character overlap, splitting on paragraphs first and falling back to sentence level splitting for long paragraphs.
+   Reads `.md`/`.txt` files, strips HTML and whitespace noise, and splits each document into roughly 300 character chunks with 50 character overlap, splitting on paragraphs first and falling back to sentence level splitting for long paragraphs.
 
 2. **Embedding and indexing** (`src/embedder.py`, `src/vector_store.py`)
-   Embeds chunks with `sentence-transformers` (`all-MiniLM-L6-v2`, 384 dimensions, normalized) and stores them in a flat numpy cosine similarity index (`index/`).
+   Embeds chunks with `sentence-transformers` (`all-MiniLM-L6-v2`, 384 dimensions, normalized) into a flat numpy cosine similarity index. The index is no longer a single local file on disk — see "Multi-tenant storage" below.
 
 3. **Retrieval and generation** (`src/retriever.py`, `src/rag_chain.py`)
-   A LangChain pipeline: history aware query rewriting (resolving vague follow up questions using conversation history), vector retrieval, prompt construction, generation via Groq (`openai/gpt-oss-120b`), structured `{answer, sources}` output through Pydantic, and multi turn memory via `RunnableWithMessageHistory`.
+   A LangChain pipeline: history aware query rewriting (resolving vague follow-up questions using conversation history), vector retrieval, prompt construction, generation via Groq (`openai/gpt-oss-120b`), structured `{answer, sources}` output through Pydantic, and multi-turn memory via `RunnableWithMessageHistory` (keyed per user + session, see below).
 
-4. **MCP server** (`src/mcp_server.py`, `src/auth.py`)
-   Exposes the chain as a single tool, `ask_notes(question, session_id)`, over MCP's Streamable HTTP transport, gated by a custom `ApiKeyMiddleware`.
+### Multi-tenant layer
+
+The original version above served one shared notebook to anyone with the single hardcoded API key. It's since been reworked so each user has their own notes, their own vector index, and their own credentials:
+
+4. **Per-user vector storage** (`src/vector_store.py`)
+   `VectorStore.save_to_gcs(user_id)` / `load_from_gcs(user_id)` persist each user's index to `gs://<bucket>/users/<user_id>/index/` instead of the local `index/` directory. This matters because Cloud Run instances are stateless and ephemeral — nothing written to local disk survives between requests or across instances, so the index has to live somewhere every instance can reach. `upsert_document` replaces a source's old chunks on re-upload rather than duplicating them.
+
+5. **Web API** (`src/web_api.py`, FastAPI)
+   REST surface so notes/questions don't have to go through the MCP protocol at all:
+   - `POST /notes/upload` — upload a note, chunk + embed it, merge into the caller's GCS-backed index
+   - `POST /ask` — ask a question against the caller's own notes
+   - `GET /notes` — list the caller's uploaded source filenames
+   - `POST /api-keys` — mint a personal MCP API key for the logged-in user (shown once)
+
+   Every route is gated by `Depends(get_current_user_id)`.
+
+6. **Firebase Authentication** (`src/firebase_auth.py`)
+   The web API expects `Authorization: Bearer <firebase-id-token>`. The token is a self-certifying JWT verified locally against Google's public keys (no network round trip per request) via `firebase_admin.auth.verify_id_token`, returning the caller's Firebase `uid`.
+
+7. **Per-user MCP accounts** (`src/user_store.py`, `src/mcp_server.py`)
+   MCP API keys are no longer one shared secret. `create_api_key(user_id)` mints a random key and stores the `key -> user_id` mapping in Firestore (`api_keys` collection); `resolve_api_key(api_key)` looks it up. `mcp_server.py`'s `ask_notes` tool resolves the caller's `x-api-key` header to a `user_id` this way, then loads *that* user's GCS-backed index — so each MCP caller only ever sees their own notes.
+
+### MCP server
+
+8. **MCP server** (`src/mcp_server.py`, `src/auth.py`)
+   Exposes `ask_notes(question, session_id)` over MCP's Streamable HTTP transport, gated by `ApiKeyMiddleware` (checks the key is present/well-formed) and then `resolve_api_key` (checks whose notes to load).
 
 ## Tech Stack
 
-Python, LangChain, sentence transformers, Groq, MCP (Streamable HTTP transport), Docker, Google Cloud Run, Google Cloud Build.
+Python, FastAPI, LangChain, sentence-transformers, Groq, MCP (Streamable HTTP transport), Firebase Auth, Firestore, Google Cloud Storage, Docker, Google Cloud Run, Google Cloud Build.
 
 ## Running Locally
 
@@ -43,28 +69,46 @@ Create a `.env` file in the project root:
 ```
 GROQ_API_KEY=your_groq_api_key
 MCP_API_KEY=any_random_string_you_choose
+GCS_BUCKET_NAME=your_gcs_bucket_name
+FIREBASE_WEB_API_KEY=your_firebase_web_api_key
 ```
 
-Build the index (one time, or whenever `notes/` changes):
-```cmd
-python src\vector_store.py
-```
+Google credentials (GCS, Firestore, Firebase Admin) resolve via Application Default Credentials — run `gcloud auth application-default login` once locally; on Cloud Run this comes from the attached service account instead.
 
-Run the server:
+**Run the MCP server:**
 ```cmd
 python src\mcp_server.py
 ```
+Listens on `http://0.0.0.0:8080/mcp` (or `$PORT`). Every request must include a matching `x-api-key` header, resolved to a user account via Firestore.
 
-The server listens on `http://0.0.0.0:8080/mcp` (or `$PORT` if set). Every request must include a matching `x-api-key` header.
+**Run the web API:**
+```cmd
+python src\web_api.py
+```
+Listens on `http://0.0.0.0:8080` (or `$PORT`). Every request must include `Authorization: Bearer <firebase-id-token>`.
+
+**Try it end to end without a frontend:**
+```cmd
+python test_web_api_client.py
+```
+Signs in against Firebase's own REST API (standing in for a browser login form, which doesn't exist yet — see Next Steps) and exercises `/api-keys`, `/notes/upload`, `/notes`, and `/ask` in sequence. `test_mcp_client.py` does the equivalent smoke test against the MCP server directly.
 
 ## Deployment
 
-Containerized with the included `Dockerfile` and deployed to Google Cloud Run. The build happens remotely through Cloud Build (`gcloud run deploy --source .`) rather than a local Docker push. Secrets are passed in as environment variables at deploy time (`--env-vars-file env.yaml`, itself gitignored) and are never baked into the image. `notes/` and the prebuilt `index/` are baked into the image, since the container needs to be self contained to answer questions.
+Containerized with the included `Dockerfile` and deployed to Google Cloud Run. The build happens remotely through Cloud Build (`gcloud run deploy --source .`) rather than a local Docker push. Secrets are passed in as environment variables at deploy time (`--env-vars-file env.yaml`, itself gitignored) and are never baked into the image.
 
-Cloud Run's own authentication is left open (`--allow-unauthenticated`) since `ApiKeyMiddleware` is the intended access control layer, not GCP's.
+Cloud Run's own authentication is left open (`--allow-unauthenticated`) since the app-level auth (`ApiKeyMiddleware`/Firestore resolution for MCP, Firebase tokens for the web API) is the intended access control layer, not GCP's.
 
-Two deploy time gotchas worth remembering: `.gcloudignore` controls what gets uploaded to Cloud Build and is separate from `.gitignore`, so `notes/` and `index/` had to be explicitly kept out of it even though both are excluded from git. The MCP SDK's own DNS rebinding protection also defaults to only allowing a `Host` header of `127.0.0.1`, so it silently blocked every request once deployed under a real hostname, until it was explicitly disabled in favor of the API key layer already doing that job.
+**Known gap:** the committed `Dockerfile` still bakes a local `notes/`/`index/` into the image and only runs `mcp_server.py` — that reflects the pre-multi-tenant deploy and hasn't been updated for GCS-backed storage or the new `web_api.py` entrypoint. The live URL above is the old deploy; redeploying is an open next step.
+
+Two deploy-time gotchas worth remembering: `.gcloudignore` controls what gets uploaded to Cloud Build and is separate from `.gitignore`, so anything excluded from git (like `notes/`, `index/`, and now the test clients) has to be excluded from `.gcloudignore` too if it shouldn't ship. The MCP SDK's own DNS rebinding protection also defaults to only allowing a `Host` header of `127.0.0.1`, so it silently blocked every request once deployed under a real hostname, until it was explicitly disabled in favor of the API-key/Firestore layer already doing that job.
+
+## Next Steps (as of this update)
+
+- **Phase E — real login.** `test_web_api_client.py` signs in via Firebase's raw REST API as a stand-in; there's still no actual login form/frontend. Needed before this is usable by anyone but the person running test scripts.
+- **Redeploy.** `Dockerfile`/Cloud Run config predate phases A-D — still single-tenant, still only runs `mcp_server.py`, still bakes in a local index. Needs a second entrypoint (or a way to run both `web_api.py` and `mcp_server.py`), `GCS_BUCKET_NAME`/`FIREBASE_WEB_API_KEY` added to `env.yaml`, and the baked-in `notes/`/`index/` dropped from the image now that storage is per-user and GCS-backed.
+- **README/deploy docs vs. reality.** Keep this file in sync as the multi-tenant rework continues — it drifted noticeably between the original single-user deploy and phases A-D.
 
 ## Part of a Series
 
-This is the first of three planned projects to learn RAG, LangChain, local and hosted model serving, and MCP from scratch. Next up: a codebase question and answer assistant with citations back to file and line, and a shared memory MCP server backed by a vector database.
+This was originally planned as the first of three projects to learn RAG, LangChain, local/hosted model serving, and MCP from scratch (next: a codebase Q&A assistant with file/line citations, then a shared-memory MCP server). Work has stayed on this project longer than planned in order to take it from a single-user script to a real multi-tenant service — picking up Project 2 is still on the table once the gaps above are closed.
