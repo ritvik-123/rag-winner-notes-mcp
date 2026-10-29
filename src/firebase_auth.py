@@ -11,7 +11,10 @@ def _get_app() -> firebase_admin.App:
         # No explicit credentials passed -- this resolves via Application
         # Default Credentials, same as the GCS/Firestore clients already in
         # this project: the attached service account on Cloud Run, or
-        # `gcloud auth application-default login` locally.
+        # `gcloud auth application-default login` locally. Local user-ADC
+        # credentials don't carry a project ID the way a service account
+        # does, so GOOGLE_CLOUD_PROJECT must be set in .env for this to work
+        # outside Cloud Run.
         _app = firebase_admin.initialize_app()
     return _app
 
