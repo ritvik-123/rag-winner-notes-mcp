@@ -31,7 +31,7 @@ server = MCPServer(name="rag-notes-assistant")
 @server.tool()
 def ask_notes(question: str, ctx: Context, session_id: str = "default") -> RAGAnswer:
     """Answer a question using the calling user's own uploaded notes, citing the source files used."""
-    api_key = (ctx.request_headers or {}).get("x-api-key")
+    api_key = (ctx.headers or {}).get("x-api-key")
     user_id = resolve_api_key(api_key) if api_key else None
     if user_id is None:
         return RAGAnswer(answer="Unrecognized API key.", sources=[])
