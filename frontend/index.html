@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAG Notes - Login</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 420px; margin: 60px auto; color: #222; }
+  h1 { font-size: 1.3rem; }
+  label { display: block; margin-top: 12px; font-size: 0.9rem; }
+  input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+  button { margin-top: 16px; padding: 8px 14px; margin-right: 8px; cursor: pointer; }
+  #status { margin-top: 20px; padding: 12px; border-radius: 6px; background: #f3f3f3; white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; }
+  #status.error { background: #fde2e2; color: #a40000; }
+  #loggedIn { display: none; margin-top: 24px; border-top: 1px solid #ddd; padding-top: 16px; }
+</style>
+</head>
+<body>
+
+<h1>RAG Notes - Login</h1>
+
+<label>Backend URL
+  <input id="baseUrl" value="http://localhost:8080">
+</label>
+<label>Email
+  <input id="email" type="email" value="test@example.com">
+</label>
+<label>Password
+  <input id="password" type="password" value="testpassword123">
+</label>
+
+<button id="signInBtn">Sign In</button>
+<button id="signUpBtn">Sign Up</button>
+
+<div id="status"></div>
+
+<div id="loggedIn">
+  <p>Logged in as <strong id="whoami"></strong></p>
+  <label>Your ID token (what you'd send as a Bearer token)
+    <input id="idToken" readonly>
+  </label>
+  <button id="mintKeyBtn">Mint MCP API key</button>
+  <button id="signOutBtn">Sign Out</button>
+</div>
+
+<!-- Firebase JS SDK, compat build: plain <script> tags, no bundler/module
+     step needed, matching the rest of this project's "no extra tooling"
+     approach. -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script>
+// These values identify the Firebase project to the client SDK -- they are
+// not secrets (Firebase's own docs say so explicitly: real access control
+// happens via security rules / backend token verification, not by hiding
+// this config). Safe to commit.
+const firebaseConfig = {
+  apiKey: "AIzaSyDljEO6_zcuUBlEf68_pnH8pJIfdx4cUvw",
+  authDomain: "rag-notes-mcp.firebaseapp.com",
+  projectId: "rag-notes-mcp",
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+
+const statusEl = document.getElementById("status");
+const loggedInEl = document.getElementById("loggedIn");
+
+function showStatus(message, isError = false) {
+  statusEl.textContent = message;
+  statusEl.className = isError ? "error" : "";
+}
+
+async function onAuthSuccess(user) {
+  document.getElementById("whoami").textContent = user.email;
+  document.getElementById("idToken").value = await user.getIdToken();
+  loggedInEl.style.display = "block";
+  showStatus(`Signed in as ${user.email}.`);
+}
+
+document.getElementById("signInBtn").addEventListener("click", async () => {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  try {
+    const credential = await auth.signInWithEmailAndPassword(email, password);
+    await onAuthSuccess(credential.user);
+  } catch (err) {
+    showStatus(`Sign in failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("signUpBtn").addEventListener("click", async () => {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  try {
+    const credential = await auth.createUserWithEmailAndPassword(email, password);
+    await onAuthSuccess(credential.user);
+  } catch (err) {
+    showStatus(`Sign up failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("signOutBtn").addEventListener("click", async () => {
+  await auth.signOut();
+  loggedInEl.style.display = "none";
+  showStatus("Signed out.");
+});
+
+document.getElementById("mintKeyBtn").addEventListener("click", async () => {
+  const baseUrl = document.getElementById("baseUrl").value.replace(/\/$/, "");
+  const idToken = document.getElementById("idToken").value;
+  try {
+    const response = await fetch(`${baseUrl}/api-keys`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    const data = await response.json();
+    showStatus(`Minted MCP API key (shown once, save it now):\n${data.api_key}`);
+  } catch (err) {
+    showStatus(`Minting API key failed: ${err.message}`, true);
+  }
+});
+</script>
+
+</body>
+</html>

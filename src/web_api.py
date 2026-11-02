@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from chunker import chunk_documents
@@ -27,6 +28,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="RAG Notes API", lifespan=lifespan)
+
+# Wide open for now: the frontend (phase E) is a static page with no fixed
+# origin yet (file://, a local static server, eventually some deployed
+# URL), and the real access control is the Firebase token check on every
+# route below, not same-origin policy. Tighten allow_origins once the
+# frontend has a stable deployed origin.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class AskRequest(BaseModel):
