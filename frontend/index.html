@@ -2,63 +2,221 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>RAG Notes - Login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Notes</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 420px; margin: 60px auto; color: #222; }
-  h1 { font-size: 1.3rem; }
-  label { display: block; margin-top: 12px; font-size: 0.9rem; }
-  input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
-  button { margin-top: 16px; padding: 8px 14px; margin-right: 8px; cursor: pointer; }
-  #status { margin-top: 20px; padding: 12px; border-radius: 6px; background: #f3f3f3; white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; }
-  #status.error { background: #fde2e2; color: #a40000; }
-  #loggedIn { display: none; margin-top: 24px; border-top: 1px solid #ddd; padding-top: 16px; }
-  #loggedIn h2 { font-size: 1.05rem; margin-top: 28px; border-top: 1px solid #eee; padding-top: 16px; }
-  #notesList { padding-left: 18px; font-size: 0.9rem; }
-  #answerBox { margin-top: 12px; padding: 12px; border-radius: 6px; background: #f3f3f3; font-size: 0.9rem; display: none; }
-  #answerBox .sources { margin-top: 8px; font-size: 0.8rem; color: #555; }
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --border: #e2e4e9;
+    --text: #1c1e21;
+    --text-muted: #6b7280;
+    --accent: #3f63f2;
+    --accent-text: #ffffff;
+    --error-bg: #fdeaea;
+    --error-text: #b3261e;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171c;
+      --surface: #1e2129;
+      --border: #30333c;
+      --text: #e8e9ec;
+      --text-muted: #9a9ea8;
+      --accent: #6f8bff;
+      --accent-text: #0e1016;
+      --error-bg: #3a1f1f;
+      --error-text: #ff8a80;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px 16px 60px;
+  }
+  .page { max-width: 880px; margin: 0 auto; }
+
+  header.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  header.app-header .brand { font-size: 1.3rem; font-weight: 600; }
+  header.app-header .brand .emoji { margin-right: 6px; }
+  header.app-header .user-chip {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.9rem; color: var(--text-muted);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    margin: 0 0 14px;
+    font-size: 1.05rem;
+  }
+  .card p.hint { margin: -4px 0 14px; font-size: 0.85rem; color: var(--text-muted); }
+
+  label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; }
+  label:first-child { margin-top: 0; }
+  input {
+    width: 100%;
+    padding: 9px 10px;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  button {
+    margin-top: 16px;
+    margin-right: 8px;
+    padding: 9px 16px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+
+  #authCard { max-width: 380px; margin: 40px auto 20px; }
+  #authCard h1 { font-size: 1.3rem; margin: 0 0 4px; text-align: center; }
+  #authCard p.tagline { text-align: center; color: var(--text-muted); font-size: 0.9rem; margin: 0 0 20px; }
+
+  #status {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-size: 0.85rem;
+    display: none;
+  }
+  #status.visible { display: block; }
+  #status.error { background: var(--error-bg); color: var(--error-text); border-color: var(--error-text); }
+
+  #dashboard { display: none; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } }
+
+  #notesList { list-style: none; padding: 0; margin: 10px 0 0; font-size: 0.9rem; }
+  #notesList li {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    background: var(--bg);
+  }
+  #notesList li.empty { color: var(--text-muted); border-style: dashed; }
+
+  #answerBox {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-size: 0.9rem;
+    display: none;
+  }
+  #answerBox .sources { margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
+
+  details.dev-tools { margin-top: 4px; }
+  details.dev-tools summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 4px 0;
+  }
+  details.dev-tools[open] summary { margin-bottom: 10px; }
 </style>
 </head>
 <body>
 
-<h1>RAG Notes - Login</h1>
+<div class="page">
 
-<label>Backend URL
-  <input id="baseUrl" value="http://localhost:8080">
-</label>
-<label>Email
-  <input id="email" type="email" value="test@example.com">
-</label>
-<label>Password
-  <input id="password" type="password" value="testpassword123">
-</label>
+  <header class="app-header">
+    <div class="brand"><span class="emoji">📚</span>RAG Notes</div>
+    <div class="user-chip" id="userChip" style="display:none;">
+      <span id="whoami"></span>
+      <button class="secondary" id="signOutBtn" style="margin:0;">Sign Out</button>
+    </div>
+  </header>
 
-<button id="signInBtn">Sign In</button>
-<button id="signUpBtn">Sign Up</button>
+  <div class="card" id="authCard">
+    <h1>Welcome back</h1>
+    <p class="tagline">Sign in to ask questions about your own notes.</p>
+    <label>Email
+      <input id="email" type="email" value="test@example.com" autocomplete="email">
+    </label>
+    <label>Password
+      <input id="password" type="password" value="testpassword123" autocomplete="current-password">
+    </label>
+    <button id="signInBtn">Sign In</button>
+    <button class="secondary" id="signUpBtn">Sign Up</button>
+  </div>
 
-<div id="status"></div>
+  <div id="status"></div>
 
-<div id="loggedIn">
-  <p>Logged in as <strong id="whoami"></strong></p>
-  <label>Your ID token (what you'd send as a Bearer token)
-    <input id="idToken" readonly>
-  </label>
-  <button id="mintKeyBtn">Mint MCP API key</button>
-  <button id="signOutBtn">Sign Out</button>
+  <div id="dashboard">
+    <div class="grid">
+      <div class="card">
+        <h2>Your Notes</h2>
+        <p class="hint">Upload a .txt or .md file to add it to your personal index.</p>
+        <label>File
+          <input id="noteFile" type="file" accept=".txt,.md">
+        </label>
+        <button id="uploadBtn">Upload</button>
+        <button class="secondary" id="refreshNotesBtn">Refresh</button>
+        <ul id="notesList"></ul>
+      </div>
 
-  <h2>Your Notes</h2>
-  <label>Upload a note (.txt or .md)
-    <input id="noteFile" type="file" accept=".txt,.md">
-  </label>
-  <button id="uploadBtn">Upload</button>
-  <button id="refreshNotesBtn">Refresh list</button>
-  <ul id="notesList"></ul>
+      <div class="card">
+        <h2>Ask Your Notes</h2>
+        <p class="hint">Answers are grounded only in what you've uploaded.</p>
+        <label>Question
+          <input id="question" type="text" placeholder="What is this note about?">
+        </label>
+        <button id="askBtn">Ask</button>
+        <div id="answerBox"></div>
+      </div>
+    </div>
 
-  <h2>Ask Your Notes</h2>
-  <label>Question
-    <input id="question" type="text" placeholder="What is this note about?">
-  </label>
-  <button id="askBtn">Ask</button>
-  <div id="answerBox"></div>
+    <div class="card">
+      <details class="dev-tools">
+        <summary>Developer tools (API key, backend URL, raw ID token)</summary>
+        <label>Backend URL
+          <input id="baseUrl" value="http://localhost:8080">
+        </label>
+        <label>Your ID token (what you'd send as a Bearer token)
+          <input id="idToken" readonly>
+        </label>
+        <button id="mintKeyBtn">Mint MCP API key</button>
+      </details>
+    </div>
+  </div>
+
 </div>
 
 <!-- Firebase JS SDK, compat build: plain <script> tags, no bundler/module
@@ -80,11 +238,13 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 
 const statusEl = document.getElementById("status");
-const loggedInEl = document.getElementById("loggedIn");
+const authCardEl = document.getElementById("authCard");
+const dashboardEl = document.getElementById("dashboard");
+const userChipEl = document.getElementById("userChip");
 
 function showStatus(message, isError = false) {
   statusEl.textContent = message;
-  statusEl.className = isError ? "error" : "";
+  statusEl.className = `visible${isError ? " error" : ""}`;
 }
 
 function authHeader() {
@@ -95,55 +255,80 @@ function getBaseUrl() {
   return document.getElementById("baseUrl").value.replace(/\/$/, "");
 }
 
+// Disables a button and swaps its label while an async action runs, so a
+// slow request (embedding a note, generating an answer) can't be fired
+// twice by an impatient double-click.
+async function withLoading(button, busyLabel, action) {
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = busyLabel;
+  try {
+    await action();
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
 async function onAuthSuccess(user) {
   document.getElementById("whoami").textContent = user.email;
   document.getElementById("idToken").value = await user.getIdToken();
-  loggedInEl.style.display = "block";
+  authCardEl.style.display = "none";
+  userChipEl.style.display = "flex";
+  dashboardEl.style.display = "block";
   showStatus(`Signed in as ${user.email}.`);
   await refreshNotes();
 }
 
-document.getElementById("signInBtn").addEventListener("click", async () => {
-  const email = document.getElementById("email").value;
-  const password = document.getElementById("password").value;
-  try {
-    const credential = await auth.signInWithEmailAndPassword(email, password);
-    await onAuthSuccess(credential.user);
-  } catch (err) {
-    showStatus(`Sign in failed: ${err.message}`, true);
-  }
-});
+document.getElementById("signInBtn").addEventListener("click", (e) =>
+  withLoading(e.target, "Signing in...", async () => {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+    try {
+      const credential = await auth.signInWithEmailAndPassword(email, password);
+      await onAuthSuccess(credential.user);
+    } catch (err) {
+      showStatus(`Sign in failed: ${err.message}`, true);
+    }
+  })
+);
 
-document.getElementById("signUpBtn").addEventListener("click", async () => {
-  const email = document.getElementById("email").value;
-  const password = document.getElementById("password").value;
-  try {
-    const credential = await auth.createUserWithEmailAndPassword(email, password);
-    await onAuthSuccess(credential.user);
-  } catch (err) {
-    showStatus(`Sign up failed: ${err.message}`, true);
-  }
-});
+document.getElementById("signUpBtn").addEventListener("click", (e) =>
+  withLoading(e.target, "Signing up...", async () => {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+    try {
+      const credential = await auth.createUserWithEmailAndPassword(email, password);
+      await onAuthSuccess(credential.user);
+    } catch (err) {
+      showStatus(`Sign up failed: ${err.message}`, true);
+    }
+  })
+);
 
 document.getElementById("signOutBtn").addEventListener("click", async () => {
   await auth.signOut();
-  loggedInEl.style.display = "none";
+  dashboardEl.style.display = "none";
+  userChipEl.style.display = "none";
+  authCardEl.style.display = "block";
   showStatus("Signed out.");
 });
 
-document.getElementById("mintKeyBtn").addEventListener("click", async () => {
-  try {
-    const response = await fetch(`${getBaseUrl()}/api-keys`, {
-      method: "POST",
-      headers: authHeader(),
-    });
-    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-    const data = await response.json();
-    showStatus(`Minted MCP API key (shown once, save it now):\n${data.api_key}`);
-  } catch (err) {
-    showStatus(`Minting API key failed: ${err.message}`, true);
-  }
-});
+document.getElementById("mintKeyBtn").addEventListener("click", (e) =>
+  withLoading(e.target, "Minting...", async () => {
+    try {
+      const response = await fetch(`${getBaseUrl()}/api-keys`, {
+        method: "POST",
+        headers: authHeader(),
+      });
+      if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+      const data = await response.json();
+      showStatus(`Minted MCP API key (shown once, save it now):\n${data.api_key}`);
+    } catch (err) {
+      showStatus(`Minting API key failed: ${err.message}`, true);
+    }
+  })
+);
 
 async function refreshNotes() {
   const notesList = document.getElementById("notesList");
@@ -153,7 +338,10 @@ async function refreshNotes() {
     const data = await response.json();
     notesList.innerHTML = "";
     if (data.sources.length === 0) {
-      notesList.innerHTML = "<li>(no notes uploaded yet)</li>";
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "No notes uploaded yet.";
+      notesList.appendChild(li);
     } else {
       for (const source of data.sources) {
         const li = document.createElement("li");
@@ -168,60 +356,64 @@ async function refreshNotes() {
 
 document.getElementById("refreshNotesBtn").addEventListener("click", refreshNotes);
 
-document.getElementById("uploadBtn").addEventListener("click", async () => {
-  const fileInput = document.getElementById("noteFile");
-  const file = fileInput.files[0];
-  if (!file) {
-    showStatus("Pick a file first.", true);
-    return;
-  }
-  const formData = new FormData();
-  formData.append("file", file);
-  try {
-    const response = await fetch(`${getBaseUrl()}/notes/upload`, {
-      method: "POST",
-      headers: authHeader(),
-      body: formData,
-    });
-    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-    const data = await response.json();
-    showStatus(`Uploaded "${data.source}" (${data.chunks_added} chunks added).`);
-    fileInput.value = "";
-    await refreshNotes();
-  } catch (err) {
-    showStatus(`Upload failed: ${err.message}`, true);
-  }
-});
+document.getElementById("uploadBtn").addEventListener("click", (e) =>
+  withLoading(e.target, "Uploading...", async () => {
+    const fileInput = document.getElementById("noteFile");
+    const file = fileInput.files[0];
+    if (!file) {
+      showStatus("Pick a file first.", true);
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const response = await fetch(`${getBaseUrl()}/notes/upload`, {
+        method: "POST",
+        headers: authHeader(),
+        body: formData,
+      });
+      if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+      const data = await response.json();
+      showStatus(`Uploaded "${data.source}" (${data.chunks_added} chunks added).`);
+      fileInput.value = "";
+      await refreshNotes();
+    } catch (err) {
+      showStatus(`Upload failed: ${err.message}`, true);
+    }
+  })
+);
 
-document.getElementById("askBtn").addEventListener("click", async () => {
-  const question = document.getElementById("question").value;
-  const answerBox = document.getElementById("answerBox");
-  if (!question) {
-    showStatus("Type a question first.", true);
-    return;
-  }
-  try {
-    const response = await fetch(`${getBaseUrl()}/ask`, {
-      method: "POST",
-      headers: { ...authHeader(), "Content-Type": "application/json" },
-      body: JSON.stringify({ question, session_id: "default" }),
-    });
-    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-    const data = await response.json();
-    answerBox.style.display = "block";
-    answerBox.innerHTML = "";
-    const answerDiv = document.createElement("div");
-    answerDiv.textContent = data.answer;
-    const sourcesDiv = document.createElement("div");
-    sourcesDiv.className = "sources";
-    sourcesDiv.textContent = data.sources.length
-      ? `Sources: ${data.sources.join(", ")}`
-      : "Sources: none";
-    answerBox.append(answerDiv, sourcesDiv);
-  } catch (err) {
-    showStatus(`Asking failed: ${err.message}`, true);
-  }
-});
+document.getElementById("askBtn").addEventListener("click", (e) =>
+  withLoading(e.target, "Thinking...", async () => {
+    const question = document.getElementById("question").value;
+    const answerBox = document.getElementById("answerBox");
+    if (!question) {
+      showStatus("Type a question first.", true);
+      return;
+    }
+    try {
+      const response = await fetch(`${getBaseUrl()}/ask`, {
+        method: "POST",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ question, session_id: "default" }),
+      });
+      if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+      const data = await response.json();
+      answerBox.style.display = "block";
+      answerBox.innerHTML = "";
+      const answerDiv = document.createElement("div");
+      answerDiv.textContent = data.answer;
+      const sourcesDiv = document.createElement("div");
+      sourcesDiv.className = "sources";
+      sourcesDiv.textContent = data.sources.length
+        ? `Sources: ${data.sources.join(", ")}`
+        : "Sources: none";
+      answerBox.append(answerDiv, sourcesDiv);
+    } catch (err) {
+      showStatus(`Asking failed: ${err.message}`, true);
+    }
+  })
+);
 </script>
 
 </body>
