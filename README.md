@@ -52,6 +52,11 @@ The original version above served one shared notebook to anyone with the single 
 8. **MCP server** (`src/mcp_server.py`, `src/auth.py`)
    Exposes `ask_notes(question, session_id)` over MCP's Streamable HTTP transport, gated by `ApiKeyMiddleware` (checks the key is present/well-formed) and then `resolve_api_key` (checks whose notes to load).
 
+### Frontend (phase E)
+
+9. **Login page** (`frontend/index.html`)
+   A single static page (no build step — the Firebase JS SDK is loaded via `<script>` tags) that does real email/password sign-up and sign-in through Firebase Auth, shows the signed-in user's ID token, and can mint an MCP API key by calling `POST /api-keys`. This replaces `test_web_api_client.py`'s hand-rolled Firebase REST sign-in as the actual login entry point. `web_api.py` needed CORS enabled (`CORSMiddleware`, wide open for now) since the page's origin differs from the API's — access control still comes from the per-route Firebase token check, not from CORS. There's no note-upload/ask UI on this page yet; that still goes through `test_web_api_client.py` or the MCP client.
+
 ## Tech Stack
 
 Python, FastAPI, LangChain, sentence-transformers, Groq, MCP (Streamable HTTP transport), Firebase Auth, Firestore, Google Cloud Storage, Docker, Google Cloud Run, Google Cloud Build.
@@ -95,13 +100,19 @@ Signs in against Firebase's own REST API (standing in for a browser login form, 
 
 `test_mcp_client.py` does the equivalent smoke test against the MCP server directly, minting its own key the same way. Since both this and the web API default to port 8080, run the MCP server with a different port when trying both locally at once: `set PORT=8081 && python src\mcp_server.py`, then `set MCP_SERVER_URL=http://localhost:8081/mcp` before running the test client (or just edit the default in the script).
 
+**Try the real login page:**
+```cmd
+python -m http.server 5500 --directory frontend
+```
+With `web_api.py` also running, open `http://localhost:5500/`, sign up or sign in, and use "Mint MCP API key" — same end result as `test_web_api_client.py`'s `/api-keys` call, but through a real browser login instead of a hardcoded test account.
+
 ## Deployment
 
 Containerized with the included `Dockerfile` and deployed to Google Cloud Run. The build happens remotely through Cloud Build (`gcloud run deploy --source .`) rather than a local Docker push. Secrets are passed in as environment variables at deploy time (`--env-vars-file env.yaml`, itself gitignored) and are never baked into the image.
 
 Cloud Run's own authentication is left open (`--allow-unauthenticated`) since the app-level auth (`ApiKeyMiddleware`/Firestore resolution for MCP, Firebase tokens for the web API) is the intended access control layer, not GCP's.
 
-**Known gap:** the committed `Dockerfile` still bakes a local `notes/`/`index/` into the image and only runs `mcp_server.py` — that reflects the pre-multi-tenant deploy and hasn't been updated for GCS-backed storage or the new `web_api.py` entrypoint. The live URL above is the old deploy; redeploying is an open next step.
+**Known gap:** the committed `Dockerfile` still bakes a local `notes/`/`index/` into the image and only runs `mcp_server.py` — that reflects the pre-multi-tenant deploy and hasn't been updated for GCS-backed storage, the `web_api.py` entrypoint, or serving `frontend/index.html`. The live URL above is the old deploy; redeploying is an open next step.
 
 Two deploy-time gotchas worth remembering: `.gcloudignore` controls what gets uploaded to Cloud Build and is separate from `.gitignore`, so anything excluded from git (like `notes/`, `index/`, and now the test clients) has to be excluded from `.gcloudignore` too if it shouldn't ship. The MCP SDK's own DNS rebinding protection also defaults to only allowing a `Host` header of `127.0.0.1`, so it silently blocked every request once deployed under a real hostname, until it was explicitly disabled in favor of the API-key/Firestore layer already doing that job.
 
@@ -112,7 +123,7 @@ Two deploy-time gotchas worth remembering: `.gcloudignore` controls what gets up
   - `gcloud config set project` and Application Default Credentials are separate credential stores; the Python Google SDKs only read the latter, so `gcloud auth application-default login` (not plain `gcloud auth login`) has to be run once locally too.
   - Also found and fixed a real bug while verifying: `mcp_server.py`'s `ask_notes` read `ctx.request_headers`, which doesn't exist on this SDK version's `Context` — the correct attribute is `ctx.headers`.
 - **`test_mcp_client.py` is fixed.** It now mints its own per-user API key via the web API (same pattern as `test_web_api_client.py`) instead of reading the dead `MCP_API_KEY`, and defaults to localhost instead of the live Cloud Run URL.
-- **Phase E — real login.** `test_web_api_client.py` signs in via Firebase's raw REST API as a stand-in; there's still no actual login form/frontend. Needed before this is usable by anyone but the person running test scripts.
+- **Phase E — login is done.** `frontend/index.html` is a real login page (Firebase JS SDK, sign-up/sign-in, shows the ID token, mints an MCP API key). `test_web_api_client.py`'s hand-rolled REST sign-in is no longer the only way in. Still open: there's no UI yet for uploading notes or asking questions — only login/key-minting — so `test_web_api_client.py`/`test_mcp_client.py` are still how you exercise the rest of the flow, and the frontend isn't deployed anywhere, only runnable locally.
 - **Redeploy.** `Dockerfile`/Cloud Run config predate phases A-D — still single-tenant, still only runs `mcp_server.py`, still bakes in a local index. Needs a second entrypoint (or a way to run both `web_api.py` and `mcp_server.py`), `GCS_BUCKET_NAME`/`FIREBASE_WEB_API_KEY` added to `env.yaml`, and the baked-in `notes/`/`index/` dropped from the image now that storage is per-user and GCS-backed.
 - **README/deploy docs vs. reality.** Keep this file in sync as the multi-tenant rework continues — it drifted noticeably between the original single-user deploy and phases A-D.
 
