@@ -12,6 +12,10 @@
   #status { margin-top: 20px; padding: 12px; border-radius: 6px; background: #f3f3f3; white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; }
   #status.error { background: #fde2e2; color: #a40000; }
   #loggedIn { display: none; margin-top: 24px; border-top: 1px solid #ddd; padding-top: 16px; }
+  #loggedIn h2 { font-size: 1.05rem; margin-top: 28px; border-top: 1px solid #eee; padding-top: 16px; }
+  #notesList { padding-left: 18px; font-size: 0.9rem; }
+  #answerBox { margin-top: 12px; padding: 12px; border-radius: 6px; background: #f3f3f3; font-size: 0.9rem; display: none; }
+  #answerBox .sources { margin-top: 8px; font-size: 0.8rem; color: #555; }
 </style>
 </head>
 <body>
@@ -40,6 +44,21 @@
   </label>
   <button id="mintKeyBtn">Mint MCP API key</button>
   <button id="signOutBtn">Sign Out</button>
+
+  <h2>Your Notes</h2>
+  <label>Upload a note (.txt or .md)
+    <input id="noteFile" type="file" accept=".txt,.md">
+  </label>
+  <button id="uploadBtn">Upload</button>
+  <button id="refreshNotesBtn">Refresh list</button>
+  <ul id="notesList"></ul>
+
+  <h2>Ask Your Notes</h2>
+  <label>Question
+    <input id="question" type="text" placeholder="What is this note about?">
+  </label>
+  <button id="askBtn">Ask</button>
+  <div id="answerBox"></div>
 </div>
 
 <!-- Firebase JS SDK, compat build: plain <script> tags, no bundler/module
@@ -68,11 +87,20 @@ function showStatus(message, isError = false) {
   statusEl.className = isError ? "error" : "";
 }
 
+function authHeader() {
+  return { Authorization: `Bearer ${document.getElementById("idToken").value}` };
+}
+
+function getBaseUrl() {
+  return document.getElementById("baseUrl").value.replace(/\/$/, "");
+}
+
 async function onAuthSuccess(user) {
   document.getElementById("whoami").textContent = user.email;
   document.getElementById("idToken").value = await user.getIdToken();
   loggedInEl.style.display = "block";
   showStatus(`Signed in as ${user.email}.`);
+  await refreshNotes();
 }
 
 document.getElementById("signInBtn").addEventListener("click", async () => {
@@ -104,18 +132,94 @@ document.getElementById("signOutBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("mintKeyBtn").addEventListener("click", async () => {
-  const baseUrl = document.getElementById("baseUrl").value.replace(/\/$/, "");
-  const idToken = document.getElementById("idToken").value;
   try {
-    const response = await fetch(`${baseUrl}/api-keys`, {
+    const response = await fetch(`${getBaseUrl()}/api-keys`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${idToken}` },
+      headers: authHeader(),
     });
     if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
     const data = await response.json();
     showStatus(`Minted MCP API key (shown once, save it now):\n${data.api_key}`);
   } catch (err) {
     showStatus(`Minting API key failed: ${err.message}`, true);
+  }
+});
+
+async function refreshNotes() {
+  const notesList = document.getElementById("notesList");
+  try {
+    const response = await fetch(`${getBaseUrl()}/notes`, { headers: authHeader() });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    const data = await response.json();
+    notesList.innerHTML = "";
+    if (data.sources.length === 0) {
+      notesList.innerHTML = "<li>(no notes uploaded yet)</li>";
+    } else {
+      for (const source of data.sources) {
+        const li = document.createElement("li");
+        li.textContent = source;
+        notesList.appendChild(li);
+      }
+    }
+  } catch (err) {
+    showStatus(`Loading notes failed: ${err.message}`, true);
+  }
+}
+
+document.getElementById("refreshNotesBtn").addEventListener("click", refreshNotes);
+
+document.getElementById("uploadBtn").addEventListener("click", async () => {
+  const fileInput = document.getElementById("noteFile");
+  const file = fileInput.files[0];
+  if (!file) {
+    showStatus("Pick a file first.", true);
+    return;
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const response = await fetch(`${getBaseUrl()}/notes/upload`, {
+      method: "POST",
+      headers: authHeader(),
+      body: formData,
+    });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    const data = await response.json();
+    showStatus(`Uploaded "${data.source}" (${data.chunks_added} chunks added).`);
+    fileInput.value = "";
+    await refreshNotes();
+  } catch (err) {
+    showStatus(`Upload failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("askBtn").addEventListener("click", async () => {
+  const question = document.getElementById("question").value;
+  const answerBox = document.getElementById("answerBox");
+  if (!question) {
+    showStatus("Type a question first.", true);
+    return;
+  }
+  try {
+    const response = await fetch(`${getBaseUrl()}/ask`, {
+      method: "POST",
+      headers: { ...authHeader(), "Content-Type": "application/json" },
+      body: JSON.stringify({ question, session_id: "default" }),
+    });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    const data = await response.json();
+    answerBox.style.display = "block";
+    answerBox.innerHTML = "";
+    const answerDiv = document.createElement("div");
+    answerDiv.textContent = data.answer;
+    const sourcesDiv = document.createElement("div");
+    sourcesDiv.className = "sources";
+    sourcesDiv.textContent = data.sources.length
+      ? `Sources: ${data.sources.join(", ")}`
+      : "Sources: none";
+    answerBox.append(answerDiv, sourcesDiv);
+  } catch (err) {
+    showStatus(`Asking failed: ${err.message}`, true);
   }
 });
 </script>
