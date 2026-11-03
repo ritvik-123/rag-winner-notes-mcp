@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RAG Notes</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%93%9A</text></svg>">
 <style>
   :root {
     --bg: #f5f6f8;
@@ -130,6 +131,49 @@
     background: var(--bg);
   }
   #notesList li.empty { color: var(--text-muted); border-style: dashed; }
+  #notesList li.clickable { cursor: pointer; }
+  #notesList li.clickable:hover { border-color: var(--accent); }
+  #notesList li.selected { border-color: var(--accent); background: var(--surface); }
+
+  #noteViewer {
+    display: none;
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  #noteViewer h3 {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  #noteViewer .close-btn {
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  #noteViewer .chunk {
+    font-size: 0.82rem;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    margin-bottom: 6px;
+    max-height: 160px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  #noteViewer .chunk .chunk-label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
 
   #answerBox {
     margin-top: 14px;
@@ -183,13 +227,14 @@
     <div class="grid">
       <div class="card">
         <h2>Your Notes</h2>
-        <p class="hint">Upload a .txt or .md file to add it to your personal index.</p>
+        <p class="hint">Upload a .txt, .md, or .pdf file to add it to your personal index.</p>
         <label>File
-          <input id="noteFile" type="file" accept=".txt,.md">
+          <input id="noteFile" type="file" accept=".txt,.md,.pdf">
         </label>
         <button id="uploadBtn">Upload</button>
         <button class="secondary" id="refreshNotesBtn">Refresh</button>
         <ul id="notesList"></ul>
+        <div id="noteViewer"></div>
       </div>
 
       <div class="card">
@@ -332,6 +377,7 @@ document.getElementById("mintKeyBtn").addEventListener("click", (e) =>
 
 async function refreshNotes() {
   const notesList = document.getElementById("notesList");
+  closeNoteViewer();
   try {
     const response = await fetch(`${getBaseUrl()}/notes`, { headers: authHeader() });
     if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
@@ -345,7 +391,9 @@ async function refreshNotes() {
     } else {
       for (const source of data.sources) {
         const li = document.createElement("li");
+        li.className = "clickable";
         li.textContent = source;
+        li.addEventListener("click", () => viewNote(source, li));
         notesList.appendChild(li);
       }
     }
@@ -355,6 +403,57 @@ async function refreshNotes() {
 }
 
 document.getElementById("refreshNotesBtn").addEventListener("click", refreshNotes);
+
+function closeNoteViewer() {
+  const viewer = document.getElementById("noteViewer");
+  viewer.style.display = "none";
+  viewer.innerHTML = "";
+  document.querySelectorAll("#notesList li.selected").forEach((li) => li.classList.remove("selected"));
+}
+
+async function viewNote(source, listItem) {
+  const viewer = document.getElementById("noteViewer");
+  const alreadySelected = listItem.classList.contains("selected");
+  closeNoteViewer();
+  if (alreadySelected) return; // clicking the selected note again just closes it
+
+  listItem.classList.add("selected");
+  viewer.style.display = "block";
+  viewer.innerHTML = "<p>Loading...</p>";
+  try {
+    const response = await fetch(`${getBaseUrl()}/notes/${encodeURIComponent(source)}`, {
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    const data = await response.json();
+
+    viewer.innerHTML = "";
+    const heading = document.createElement("h3");
+    const title = document.createElement("span");
+    title.textContent = `📄 ${data.source} (${data.chunks.length} chunk${data.chunks.length === 1 ? "" : "s"})`;
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "close-btn";
+    closeBtn.textContent = "Close";
+    closeBtn.addEventListener("click", closeNoteViewer);
+    heading.append(title, closeBtn);
+    viewer.appendChild(heading);
+
+    data.chunks.forEach((chunkText, index) => {
+      const chunkDiv = document.createElement("div");
+      chunkDiv.className = "chunk";
+      const label = document.createElement("span");
+      label.className = "chunk-label";
+      label.textContent = `Chunk ${index} -- this is one retrieval unit, overlapping slightly with its neighbors`;
+      const body = document.createElement("div");
+      body.textContent = chunkText;
+      chunkDiv.append(label, body);
+      viewer.appendChild(chunkDiv);
+    });
+  } catch (err) {
+    viewer.style.display = "none";
+    showStatus(`Loading note failed: ${err.message}`, true);
+  }
+}
 
 document.getElementById("uploadBtn").addEventListener("click", (e) =>
   withLoading(e.target, "Uploading...", async () => {

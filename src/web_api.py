@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from chunker import chunk_documents
 from embedder import embed_chunks, embed_texts
 from firebase_auth import get_current_user_id
-from loader import Document
+from loader import Document, extract_text_from_pdf
 from rag_chain import RAGAnswer, build_conversational_chain
 from retriever import NotesRetriever
 from user_store import create_api_key
@@ -51,9 +51,18 @@ class NotesListResponse(BaseModel):
     sources: list[str]
 
 
+class NoteChunksResponse(BaseModel):
+    source: str
+    chunks: list[str]
+
+
 @app.post("/notes/upload")
 async def upload_note(file: UploadFile, user_id: str = Depends(get_current_user_id)) -> dict:
-    raw_text = (await file.read()).decode("utf-8")
+    raw_bytes = await file.read()
+    if file.filename.lower().endswith(".pdf"):
+        raw_text = extract_text_from_pdf(raw_bytes)
+    else:
+        raw_text = raw_bytes.decode("utf-8")
     document = Document(content=raw_text, source=file.filename)
     chunks = chunk_documents([document])
     vectors = embed_chunks(chunks)
@@ -91,6 +100,21 @@ async def list_notes(user_id: str = Depends(get_current_user_id)) -> NotesListRe
     store = VectorStore()
     store.load_from_gcs(user_id)
     return NotesListResponse(sources=sorted({chunk.source for chunk in store.chunks}))
+
+
+@app.get("/notes/{source}", response_model=NoteChunksResponse)
+async def get_note(source: str, user_id: str = Depends(get_current_user_id)) -> NoteChunksResponse:
+    """Returns a source's chunks in order, not a perfect reconstruction of
+    the uploaded file -- chunks overlap by design (see chunker.py), so this
+    is deliberately showing the same units retrieval actually searches over.
+    """
+    store = VectorStore()
+    store.load_from_gcs(user_id)
+    matching = sorted(
+        (chunk for chunk in store.chunks if chunk.source == source),
+        key=lambda chunk: chunk.chunk_index,
+    )
+    return NoteChunksResponse(source=source, chunks=[chunk.content for chunk in matching])
 
 
 @app.post("/api-keys")
