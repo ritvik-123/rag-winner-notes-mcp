@@ -5,6 +5,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from chunker import chunk_documents
@@ -29,11 +30,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="RAG Notes API", lifespan=lifespan)
 
-# Wide open for now: the frontend (phase E) is a static page with no fixed
-# origin yet (file://, a local static server, eventually some deployed
-# URL), and the real access control is the Firebase token check on every
-# route below, not same-origin policy. Tighten allow_origins once the
-# frontend has a stable deployed origin.
+# Wide open for now. In production the frontend (mounted below) is served
+# from this same app, so most real traffic is same-origin anyway -- this
+# matters for local dev, where the page can be opened via file:// or a
+# different port than this API. Either way, the real access control is the
+# Firebase token check on every route below, not same-origin policy.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -124,6 +125,13 @@ async def mint_api_key(user_id: str = Depends(get_current_user_id)) -> dict:
     safe, there's no "show it again" afterwards.
     """
     return {"api_key": create_api_key(user_id)}
+
+
+# Serves frontend/index.html (and anything else dropped in frontend/) at
+# "/". Mounted last and matched last: every route declared above still
+# takes priority for its exact path, so this only catches requests that
+# aren't one of the API routes.
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
 if __name__ == "__main__":

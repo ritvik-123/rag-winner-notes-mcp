@@ -9,22 +9,24 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# App code, notes, and the prebuilt index. Baking notes/ and index/ directly
-# into the image means the container is self-contained and needs no external
-# storage to answer questions -- worth remembering that this also means your
-# personal notes travel with the image itself, so treat the built image with
-# the same care as the notes (fine for a private registry, not something to
-# push somewhere public).
+# App code and the static frontend. notes/ and index/ are no longer baked in
+# here -- since the multi-tenant rework, every request loads its user's
+# index from GCS (vector_store.py's load_from_gcs), so a local notes/index/
+# in the image would just be dead weight (and would've leaked whatever
+# notes happened to be on this machine into the image).
 COPY src/ ./src/
-COPY notes/ ./notes/
-COPY index/ ./index/
+COPY frontend/ ./frontend/
 
 ENV PYTHONUNBUFFERED=1
 
-# Stay at /app (not /app/src) so "index" and "notes" resolve the same way
-# they do locally, where index/ and notes/ sit next to src/, not inside it.
-# Running "python src/mcp_server.py" (script path, not a cd) still works for
-# the bare "from retriever import ..." style imports inside mcp_server.py --
-# Python automatically adds a script's own directory to sys.path regardless
-# of the current working directory.
-CMD ["python", "src/mcp_server.py"]
+# Stay at /app (not /app/src) so "frontend" resolves the same way it does
+# locally, where it sits next to src/, not inside it. Running
+# "python src/web_api.py" (script path, not a cd) still works for the bare
+# "from retriever import ..." style imports inside it -- Python automatically
+# adds a script's own directory to sys.path regardless of the current
+# working directory.
+#
+# This image is also deployed as the MCP server, by overriding this default
+# at deploy time (--args src/mcp_server.py) rather than building a second
+# image -- see the Deployment section in README.md.
+CMD ["python", "src/web_api.py"]
