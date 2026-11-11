@@ -4,9 +4,9 @@ A personal knowledge base assistant built from scratch: retrieval augmented gene
 
 ## Live Deployment
 
-`https://rag-notes-mcp-585012498530.us-central1.run.app/mcp`
+**Web app / dashboard:** `https://rag-notes-web-nqni5adpca-uc.a.run.app`
 
-The service is public but gated by an API key check (`x-api-key` header). **Note:** this URL predates the multi-tenant rework (phases A-D) and the dashboard (phase E) below — it's the old single-tenant deploy. Redeploying per [Deployment](#deployment) below is the next step; this section will be updated with the real `rag-notes-web`/`rag-notes-mcp` URLs once that's done.
+**MCP server:** `https://rag-notes-mcp-585012498530.us-central1.run.app/mcp` — **Note:** this one still predates the multi-tenant rework (phases A-D); only `rag-notes-web` has been redeployed so far. Redeploying `rag-notes-mcp` per [Deployment](#deployment) below is the next step; this line will be updated once that's done.
 
 ## Overview
 
@@ -116,19 +116,21 @@ The build happens remotely through Cloud Build (`gcloud run deploy --source .`) 
 **To deploy** (from the project root, once `env.yaml` has `GROQ_API_KEY`, `GOOGLE_CLOUD_PROJECT`, `GCS_BUCKET_NAME`, and `FIREBASE_WEB_API_KEY` — same values as `.env`):
 
 ```cmd
-gcloud run deploy rag-notes-web --source . --region us-central1 --allow-unauthenticated --env-vars-file env.yaml
+gcloud run deploy rag-notes-web --source . --region us-central1 --allow-unauthenticated --env-vars-file env.yaml --memory 2Gi
 
-gcloud run deploy rag-notes-mcp --source . --region us-central1 --allow-unauthenticated --env-vars-file env.yaml --command python --args src/mcp_server.py
+gcloud run deploy rag-notes-mcp --source . --region us-central1 --allow-unauthenticated --env-vars-file env.yaml --command python --args src/mcp_server.py --memory 2Gi
 ```
 
 Each prints its own `*.run.app` URL. `rag-notes-web`'s URL is the real website now — open it directly. `rag-notes-mcp`'s URL (with `/mcp` appended) is what goes into an MCP client config, replacing the one in [Live Deployment](#live-deployment) above once redeployed.
 
-Two deploy-time gotchas worth remembering: `.gcloudignore` controls what gets uploaded to Cloud Build and is separate from `.gitignore`, so anything excluded from git (like `notes/`, `index/`, and now the test clients) has to be excluded from `.gcloudignore` too if it shouldn't ship. The MCP SDK's own DNS rebinding protection also defaults to only allowing a `Host` header of `127.0.0.1`, so it silently blocked every request once deployed under a real hostname, until it was explicitly disabled in favor of the API-key/Firestore layer already doing that job.
+Three deploy-time gotchas worth remembering: `.gcloudignore` controls what gets uploaded to Cloud Build and is separate from `.gitignore`, so anything excluded from git (like `notes/`, `index/`, and now the test clients) has to be excluded from `.gcloudignore` too if it shouldn't ship. The MCP SDK's own DNS rebinding protection also defaults to only allowing a `Host` header of `127.0.0.1`, so it silently blocked every request once deployed under a real hostname, until it was explicitly disabled in favor of the API-key/Firestore layer already doing that job. And `--memory` needs to be bumped above Cloud Run's 512 MiB default — loading the `sentence-transformers` embedding model (plus torch, firebase_admin, etc.) at startup used over 1114 MiB in practice, which silently manifests as a generic "container failed to start and listen on the port" error with no memory-related wording at all; `gcloud logging read` on the revision is what actually surfaces the real `Memory limit ... exceeded` reason. Separately, the model is downloaded from the Hugging Face Hub fresh on every cold start (it already hit an HF rate limit once) rather than being baked into the image — not fixed yet, see Next Steps.
 
 ## Next Steps (as of this update)
 
 - **Everything through Phase E is done and verified locally:** multi-tenant storage/auth (phases A-D), the login + upload + ask dashboard (phase E), PDF uploads, and the note/chunk viewer.
-- **Redeploy is next, and now unblocked.** `Dockerfile`, `.gcloudignore`, and `env.yaml` are updated for the two-service, GCS-backed, frontend-serving setup described in [Deployment](#deployment) above — but the `gcloud run deploy` commands there haven't actually been run yet. Once they are, update the [Live Deployment](#live-deployment) section with the real `rag-notes-web` and `rag-notes-mcp` URLs (the one currently listed predates phases A-D entirely).
+- **`rag-notes-web` is redeployed and live** (see [Live Deployment](#live-deployment)) on the two-service, GCS-backed, frontend-serving setup — required bumping `--memory` to `2Gi` to avoid an OOM on startup (see [Deployment](#deployment) gotchas).
+- **`rag-notes-mcp` still needs the same redeploy** — it's still running the pre-phase-A-D single-tenant image. Run the second `gcloud run deploy` command in [Deployment](#deployment) above, then update [Live Deployment](#live-deployment) with its real URL.
+- **Cold-start model download isn't fixed yet** — the embedding model is pulled from the Hugging Face Hub on every cold start instead of being baked into the image, and already hit an HF rate limit once in practice. Worth caching it into the Docker image at build time or setting an `HF_TOKEN`, to avoid slow/flaky cold starts.
 - **After that:** pick back up **Project 2 — codebase Q&A / doc-grounded coding assistant**, the next project in the series.
 
 ## Part of a Series
