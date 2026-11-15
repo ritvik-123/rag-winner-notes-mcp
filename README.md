@@ -1,4 +1,4 @@
-# rag-winner-notes-mcp
+# RAG Winner Notes MCP
 
 A personal knowledge base assistant built from scratch. It lets you upload your own notes, then ask questions about them and get answers grounded in those notes. You can use it two ways: through a website, or through an MCP client (like Claude Code or Claude Desktop). Each person who signs up gets their own private set of notes. It is deployed for real on Google Cloud Run.
 
@@ -18,7 +18,7 @@ This one is not for browsers. It is meant to be typed into the configuration of 
 
 ## Overview
 
-This project was built to learn the full RAG (retrieval augmented generation) stack from the ground up: chunking and embedding text, vector retrieval, LangChain's retrieval and generation pieces, the Model Context Protocol (MCP), and real cloud deployment. Partway through, the project was expanded a second time: it started as a single-user script and was turned into a real multi-tenant service, with accounts, per-user storage, and API key issuance. Every layer was built and understood on its own before moving to the next one.
+This project was built to learn the full RAG (retrieval-augmented generation) stack from the ground up: chunking and embedding text, vector retrieval, LangChain's retrieval and generation pieces, the Model Context Protocol (MCP), and real cloud deployment. Partway through, the project was expanded a second time: it started as a single-user script and was turned into a real multi-tenant service, with accounts, per-user storage, and API key issuance. Every layer was built and understood on its own before moving to the next one.
 
 ## Architecture
 
