@@ -142,17 +142,17 @@ The MCP SDK has its own DNS rebinding protection, which by default only allows a
 
 `--memory` needs to be set above Cloud Run's default of 512 MiB. Loading the `sentence-transformers` embedding model, plus torch, firebase_admin, and everything else, used over 1114 MiB in practice at startup. When that happens, Cloud Run shows a generic "container failed to start and listen on the port" error, with no mention of memory at all. The real reason only shows up by running `gcloud logging read` on the revision, which will say something like "Memory limit ... exceeded."
 
-Separately, the embedding model is downloaded fresh from the Hugging Face Hub on every cold start, instead of being baked into the image. This has already hit a Hugging Face rate limit once. It is not fixed yet; see Next Steps.
+Separately, the embedding model used to be downloaded fresh from the Hugging Face Hub on every cold start, instead of being baked into the image, which had already hit a Hugging Face rate limit once. This is now fixed: the Dockerfile downloads the model once at build time and sets `HF_HUB_OFFLINE=1`, so the running container never makes an HF network call at all.
 
 ## Next Steps (as of this update)
 
-Everything through phase E is done and verified locally: multi-tenant storage and auth (phases A through D), the login, upload, and ask dashboard (phase E), PDF uploads, and the note/chunk viewer.
+This project is now complete. Everything through phase E is done and verified locally: multi-tenant storage and auth (phases A through D), the login, upload, and ask dashboard (phase E), PDF uploads, and the note/chunk viewer.
 
-Both services are redeployed and live. `rag-notes-web` is redeployed on the two-service, GCS-backed, frontend-serving setup, which needed `--memory 2Gi` to avoid an out-of-memory error on startup (see the Deployment section above). `rag-notes-mcp` is redeployed the same way, and was verified end to end against its live URL using `test_mcp_client.py`: it minted a key, resolved it through Firestore, loaded a test user's GCS index, and returned a correct, grounded answer with a source citation.
+Both services are redeployed and live, on the final version of the image. `rag-notes-web` is redeployed on the two-service, GCS-backed, frontend-serving setup, which needed `--memory 2Gi` to avoid an out-of-memory error on startup (see the Deployment section above). `rag-notes-mcp` is redeployed the same way, and was verified end to end against its live URL using `test_mcp_client.py`: it minted a key, resolved it through Firestore, loaded a test user's GCS index, and returned a correct, grounded answer with a source citation.
 
-Cold-start model download is not fixed yet. The embedding model is pulled from the Hugging Face Hub on every cold start, instead of being baked into the image, and this has already hit a Hugging Face rate limit once. It is probably worth caching the model into the Docker image at build time, or setting an `HF_TOKEN`, to avoid slow or flaky cold starts.
+The cold-start model download issue is fixed. The embedding model is now baked into the Docker image at build time, and the container runs fully offline with respect to Hugging Face, so there is no more download latency or rate-limit risk on cold start.
 
-After that, the plan is to pick back up **Project 2: a codebase Q&A / doc-grounded coding assistant**, the next project in the series.
+With that, this project is wrapped up. Next up is **Project 2: a codebase Q&A / doc-grounded coding assistant**, the next project in the series.
 
 ## Part of a Series
 
