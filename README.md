@@ -6,7 +6,7 @@ A personal knowledge base assistant built from scratch: retrieval augmented gene
 
 **Web app / dashboard:** `https://rag-notes-web-nqni5adpca-uc.a.run.app`
 
-**MCP server:** `https://rag-notes-mcp-585012498530.us-central1.run.app/mcp` — **Note:** this one still predates the multi-tenant rework (phases A-D); only `rag-notes-web` has been redeployed so far. Redeploying `rag-notes-mcp` per [Deployment](#deployment) below is the next step; this line will be updated once that's done.
+**MCP server:** `https://rag-notes-mcp-585012498530.us-central1.run.app/mcp` — redeployed on the multi-tenant image (same service name/URL as before). Verified end to end with `test_mcp_client.py` against this live URL: minted a key, resolved it via Firestore, loaded the test user's GCS index, and got a correct grounded answer with source citation.
 
 ## Overview
 
@@ -129,7 +129,7 @@ Three deploy-time gotchas worth remembering: `.gcloudignore` controls what gets 
 
 - **Everything through Phase E is done and verified locally:** multi-tenant storage/auth (phases A-D), the login + upload + ask dashboard (phase E), PDF uploads, and the note/chunk viewer.
 - **`rag-notes-web` is redeployed and live** (see [Live Deployment](#live-deployment)) on the two-service, GCS-backed, frontend-serving setup — required bumping `--memory` to `2Gi` to avoid an OOM on startup (see [Deployment](#deployment) gotchas).
-- **`rag-notes-mcp` still needs the same redeploy** — it's still running the pre-phase-A-D single-tenant image. Run the second `gcloud run deploy` command in [Deployment](#deployment) above, then update [Live Deployment](#live-deployment) with its real URL.
+- **`rag-notes-mcp` is redeployed and verified** (see [Live Deployment](#live-deployment)) — same `--memory 2Gi` fix as `rag-notes-web`, reusing the same service name/URL. Confirmed working via `test_mcp_client.py` against the live URL, not just "deployed."
 - **Cold-start model download isn't fixed yet** — the embedding model is pulled from the Hugging Face Hub on every cold start instead of being baked into the image, and already hit an HF rate limit once in practice. Worth caching it into the Docker image at build time or setting an `HF_TOKEN`, to avoid slow/flaky cold starts.
 - **After that:** pick back up **Project 2 — codebase Q&A / doc-grounded coding assistant**, the next project in the series.
 
